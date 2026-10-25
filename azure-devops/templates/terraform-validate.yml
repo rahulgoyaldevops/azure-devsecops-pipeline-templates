@@ -1,0 +1,40 @@
+# ============================================================================
+# Terraform Validate & Lint Template
+# Enterprise DevSecOps Pipeline — Rahul Goyal
+# ============================================================================
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+  - name: terraformVersion
+    type: string
+    default: '1.5.7'
+
+steps:
+  - task: TerraformInstaller@1
+    displayName: 'Install Terraform ${{ parameters.terraformVersion }}'
+    inputs:
+      terraformVersion: '${{ parameters.terraformVersion }}'
+
+  - script: |
+      terraform fmt -check -recursive -diff
+    displayName: 'Terraform Format Check'
+    workingDirectory: '${{ parameters.workingDirectory }}'
+
+  - script: |
+      terraform init -backend=false
+    displayName: 'Terraform Init (validation only)'
+    workingDirectory: '${{ parameters.workingDirectory }}'
+
+  - script: |
+      terraform validate
+    displayName: 'Terraform Validate'
+    workingDirectory: '${{ parameters.workingDirectory }}'
+
+  - script: |
+      curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+      tflint --init
+      tflint --recursive --format=compact
+    displayName: 'TFLint — Static Analysis'
+    workingDirectory: '${{ parameters.workingDirectory }}'
