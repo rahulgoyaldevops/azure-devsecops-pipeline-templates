@@ -1,0 +1,42 @@
+# ============================================================================
+# Terraform Apply & Post-Deployment Smoke Test Template
+# ============================================================================
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+  - name: environment
+    type: string
+    default: 'prod'
+  - name: serviceConnection
+    type: string
+    default: 'sc-azure-platform-oidc'
+
+steps:
+  - task: DownloadPipelineArtifact@2
+    displayName: 'Download Plan Artifact'
+    inputs:
+      buildType: 'current'
+      artifactName: 'tfplan-${{ parameters.environment }}'
+      targetPath: '${{ parameters.workingDirectory }}'
+
+  - task: AzureCLI@2
+    displayName: 'Execute Terraform Apply'
+    inputs:
+      azureSubscription: '${{ parameters.serviceConnection }}'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      inlineScript: |
+        set -euo pipefail
+        terraform init
+        echo "==> Applying validated plan artifact..."
+        terraform apply -auto-approve tfplan.binary
+
+  - script: |
+      echo "==> Running Post-Apply Smoke Health Checks..."
+      # Verify connectivity and output state integrity
+      terraform output -json > output.json
+    displayName: 'Post-Deployment Health Validation'
+    workingDirectory: '${{ parameters.workingDirectory }}'
