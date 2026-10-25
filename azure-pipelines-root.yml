@@ -1,0 +1,77 @@
+# ============================================================================
+# Master Multi-Stage Enterprise Azure DevOps Pipeline
+# Author: Rahul Goyal (Senior DevOps Engineer)
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  - name: serviceConnection
+    value: 'sc-azure-workload-identity-oidc'
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/terraform'
+
+stages:
+  - stage: Validate
+    displayName: 'Stage 1: Lint, Format & Validate'
+    jobs:
+      - job: LintAndValidate
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - template: azure-devops/templates/terraform-validate.yml
+            parameters:
+              workingDirectory: $(workingDirectory)
+
+  - stage: SecurityScan
+    displayName: 'Stage 2: Shift-Left Security Audits'
+    dependsOn: Validate
+    jobs:
+      - job: StaticSecurityAnalysis
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - template: azure-devops/templates/security-scan.yml
+            parameters:
+              workingDirectory: $(workingDirectory)
+
+  - stage: Plan
+    displayName: 'Stage 3: Terraform Plan & Cost Gate'
+    dependsOn: SecurityScan
+    jobs:
+      - job: PlanAndCost
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - template: azure-devops/templates/terraform-plan.yml
+            parameters:
+              workingDirectory: $(workingDirectory)
+              environment: 'prod'
+              serviceConnection: $(serviceConnection)
+
+  - stage: DeployProd
+    displayName: 'Stage 4: Controlled Production Apply'
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: ApplyProduction
+        environment: 'Production-Approved'
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: azure-devops/templates/terraform-apply.yml
+                  parameters:
+                    workingDirectory: $(workingDirectory)
+                    environment: 'prod'
+                    serviceConnection: $(serviceConnection)
