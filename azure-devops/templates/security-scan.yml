@@ -1,0 +1,46 @@
+# ============================================================================
+# Security Scanning Template
+# Enterprise DevSecOps Pipeline — Rahul Goyal
+# ============================================================================
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+  - name: failOnHighSeverity
+    type: boolean
+    default: true
+
+steps:
+  - script: |
+      pip install checkov
+      checkov -d ${{ parameters.workingDirectory }} \
+        --framework terraform \
+        --output cli \
+        --output junitxml \
+        --output-file-path $(System.DefaultWorkingDirectory)/checkov-report
+    displayName: 'Checkov — CIS Benchmark Scan'
+    continueOnError: ${{ not(parameters.failOnHighSeverity) }}
+
+  - script: |
+      curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+      tfsec ${{ parameters.workingDirectory }} \
+        --format lovely,junit \
+        --out tfsec-results
+    displayName: 'TFSec — Terraform Security Scan'
+    continueOnError: ${{ not(parameters.failOnHighSeverity) }}
+
+  - script: |
+      curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_x64 -o gitleaks
+      chmod +x gitleaks
+      ./gitleaks detect --source . --report-format json --report-path gitleaks-report.json
+    displayName: 'Gitleaks — Secret Detection'
+
+  - task: PublishTestResults@2
+    displayName: 'Publish Security Scan Results'
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/checkov-report/*.xml'
+      searchFolder: '$(System.DefaultWorkingDirectory)'
+      testRunTitle: 'Security Scan Results'
+    condition: always()
