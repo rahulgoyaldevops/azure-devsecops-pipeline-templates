@@ -1,0 +1,46 @@
+# ============================================================================
+# Terraform Plan & Infracost Cost Estimation Template
+# Architect: Rahul Goyal (14+ Years)
+# ============================================================================
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+  - name: environment
+    type: string
+    default: 'dev'
+  - name: serviceConnection
+    type: string
+    default: 'sc-azure-platform-oidc'
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Terraform Plan with Cost Estimation'
+    inputs:
+      azureSubscription: '${{ parameters.serviceConnection }}'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      workingDirectory: '${{ parameters.workingDirectory }}'
+      inlineScript: |
+        set -euo pipefail
+        echo "==> Initializing Terraform with Remote Backend..."
+        terraform init
+
+        echo "==> Generating Terraform Execution Plan..."
+        terraform plan -var-file="environments/${{ parameters.environment }}.tfvars" -out=tfplan.binary
+
+        echo "==> Converting Plan to JSON for Policy Validation..."
+        terraform show -json tfplan.binary > tfplan.json
+
+        echo "==> Running Infracost Monthly Estimate..."
+        if command -v infracost &> /dev/null; then
+          infracost breakdown --path tfplan.json --format table
+        fi
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Execution Plan Artifact'
+    inputs:
+      targetPath: '${{ parameters.workingDirectory }}/tfplan.binary'
+      artifact: 'tfplan-${{ parameters.environment }}'
+      publishLocation: 'pipeline'
